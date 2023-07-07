@@ -17,6 +17,23 @@
     "return_type": "json"
   },
   {
+    "name": "/333",
+    "description": "",
+    "method": "GET",
+    "endpoint": "/333",
+    "data_source": {
+      "cluster_id": 1379661944646224362
+    },
+    "params": [],
+    "settings": {
+      "timeout": 5000,
+      "row_limit": 50
+    },
+    "sql_file": "sql/GET-333.sql",
+    "type": "sql_endpoint",
+    "return_type": "json"
+  },
+  {
     "name": "untitled endpoint",
     "description": "",
     "method": "GET",
