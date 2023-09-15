@@ -1,5 +1,7 @@
 {
-  "app_id": "dataapp-ssaiseuv",
+  "app_id": "dataapp-dJWRKUEr",
   "app_name": "New App",
-  "app_type": "dataapi"
+  "app_type": "dataapp",
+  "description": "",
+  "app_version": "1.0.0"
 }
