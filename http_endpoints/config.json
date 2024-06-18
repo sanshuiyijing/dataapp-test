@@ -9,7 +9,7 @@
     },
     "params": [],
     "settings": {
-      "timeout": 30000,
+      "timeout": 0,
       "row_limit": 100,
       "cache_enabled": 0,
       "cache_ttl": 0,
