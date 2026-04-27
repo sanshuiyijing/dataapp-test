@@ -86,6 +86,15 @@ jobs:
                 });
             }
 
+            function bodyHasCodexReviewRequest(body) {
+              return /(?:^|\s)@codex(?:\s+review)?(?=\s|$|[.,:;!?])/i.test(String(body || ''));
+            }
+
+            function getTimestamp(value) {
+              const timestamp = Date.parse(value || '');
+              return Number.isNaN(timestamp) ? 0 : timestamp;
+            }
+
             function hasBotThumbsUp(reactions) {
               return reactions.some((reaction) => {
                 return reaction.content === '+1' && isCodexBot(reaction.user?.login);
@@ -140,24 +149,41 @@ jobs:
                 ...reviewComments.map((comment) => comment.body || ''),
                 ...reviews.map((review) => review.body || ''),
               ];
+              const reviewRequestTimestamps = [];
+              const botActivityTimestamps = [];
 
               const botBodies = [];
 
               for (const comment of issueComments) {
+                if (!isCodexBot(comment.user?.login) && bodyHasCodexReviewRequest(comment.body)) {
+                  reviewRequestTimestamps.push(getTimestamp(comment.updated_at || comment.created_at));
+                }
+
                 if (isCodexBot(comment.user?.login)) {
                   botBodies.push(comment.body || '');
+                  botActivityTimestamps.push(getTimestamp(comment.updated_at || comment.created_at));
                 }
               }
 
               for (const comment of reviewComments) {
+                if (!isCodexBot(comment.user?.login) && bodyHasCodexReviewRequest(comment.body)) {
+                  reviewRequestTimestamps.push(getTimestamp(comment.updated_at || comment.created_at));
+                }
+
                 if (isCodexBot(comment.user?.login)) {
                   botBodies.push(comment.body || '');
+                  botActivityTimestamps.push(getTimestamp(comment.updated_at || comment.created_at));
                 }
               }
 
               for (const review of reviews) {
+                if (!isCodexBot(review.user?.login) && bodyHasCodexReviewRequest(review.body)) {
+                  reviewRequestTimestamps.push(getTimestamp(review.submitted_at || review.updated_at || review.created_at));
+                }
+
                 if (isCodexBot(review.user?.login)) {
                   botBodies.push(review.body || '');
+                  botActivityTimestamps.push(getTimestamp(review.submitted_at || review.updated_at || review.created_at));
                 }
               }
 
@@ -173,6 +199,14 @@ jobs:
                   issue_number: prNumber,
                 });
                 botApproved = hasBotThumbsUp(issueReactions);
+
+                if (botApproved) {
+                  for (const reaction of issueReactions) {
+                    if (reaction.content === '+1' && isCodexBot(reaction.user?.login)) {
+                      botActivityTimestamps.push(getTimestamp(reaction.created_at));
+                    }
+                  }
+                }
               }
 
               for (const comment of issueComments) {
@@ -186,6 +220,14 @@ jobs:
                   comment_id: comment.id,
                 });
                 botApproved = hasBotThumbsUp(reactions);
+
+                if (botApproved) {
+                  for (const reaction of reactions) {
+                    if (reaction.content === '+1' && isCodexBot(reaction.user?.login)) {
+                      botActivityTimestamps.push(getTimestamp(reaction.created_at));
+                    }
+                  }
+                }
               }
 
               for (const comment of reviewComments) {
@@ -199,12 +241,27 @@ jobs:
                   comment_id: comment.id,
                 });
                 botApproved = hasBotThumbsUp(reactions);
+
+                if (botApproved) {
+                  for (const reaction of reactions) {
+                    if (reaction.content === '+1' && isCodexBot(reaction.user?.login)) {
+                      botActivityTimestamps.push(getTimestamp(reaction.created_at));
+                    }
+                  }
+                }
               }
+
+              const latestReviewRequestAt = Math.max(0, ...reviewRequestTimestamps);
+              const latestBotActivityAt = Math.max(0, ...botActivityTimestamps);
+              const hasOutstandingReviewRequest = latestReviewRequestAt > latestBotActivityAt;
 
               let state = 'pending';
               let description = 'Waiting for Codex review comments or a thumbs up reaction.';
 
-              if (botApproved) {
+              if (hasOutstandingReviewRequest) {
+                state = 'pending';
+                description = 'Waiting for Codex to respond to the latest review request.';
+              } else if (botApproved) {
                 state = 'success';
                 description = 'Codex review approved with a thumbs up reaction.';
               } else if (hasBlockingP0) {
