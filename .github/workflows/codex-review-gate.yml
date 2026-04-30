@@ -8,6 +8,8 @@ on:
       - synchronize
       - ready_for_review
       - edited
+      - labeled
+      - unlabeled
   issue_comment:
     types:
       - created
@@ -101,6 +103,41 @@ jobs:
               });
             }
 
+            function hasCodexGateLabel(labels) {
+              return labels.some((label) => {
+                const name = String(label?.name || '').toLowerCase();
+                return name === 'task' || name === 'no-ct';
+              });
+            }
+
+            function getLatestHumanReviewState(reviews) {
+              const latestStatesByUser = new Map();
+
+              for (const review of reviews) {
+                if (isCodexBot(review.user?.login)) {
+                  continue;
+                }
+
+                const login = String(review.user?.login || '').toLowerCase();
+
+                if (!login) {
+                  continue;
+                }
+
+                const submittedAt = getTimestamp(review.submitted_at || review.updated_at || review.created_at);
+                const previousReview = latestStatesByUser.get(login);
+
+                if (!previousReview || submittedAt >= previousReview.submittedAt) {
+                  latestStatesByUser.set(login, {
+                    state: String(review.state || '').toUpperCase(),
+                    submittedAt,
+                  });
+                }
+              }
+
+              return Array.from(latestStatesByUser.values()).some((review) => review.state === 'APPROVED');
+            }
+
             async function listAll(listMethod, params) {
               return github.paginate(listMethod, {
                 ...params,
@@ -128,6 +165,7 @@ jobs:
               });
 
               const sha = pullRequest.head.sha;
+              const labels = pullRequest.labels || [];
               const issueComments = await listAll(github.rest.issues.listComments, {
                 owner,
                 repo,
@@ -254,11 +292,20 @@ jobs:
               const latestReviewRequestAt = Math.max(0, ...reviewRequestTimestamps);
               const latestBotActivityAt = Math.max(0, ...botActivityTimestamps);
               const hasOutstandingReviewRequest = latestReviewRequestAt > latestBotActivityAt;
+              const usesCodexGate = hasCodexGateLabel(labels);
+              const hasHumanApproval = getLatestHumanReviewState(reviews);
 
               let state = 'pending';
-              let description = 'Waiting for Codex review comments or a thumbs up reaction.';
+              let description = usesCodexGate
+                ? 'Waiting for Codex review comments or a thumbs up reaction.'
+                : 'Waiting for manual approval.';
 
-              if (hasOutstandingReviewRequest) {
+              if (!usesCodexGate) {
+                if (hasHumanApproval) {
+                  state = 'success';
+                  description = 'Manual approval found.';
+                }
+              } else if (hasOutstandingReviewRequest) {
                 state = 'pending';
                 description = 'Waiting for Codex to respond to the latest review request.';
               } else if (botApproved) {
